@@ -35,7 +35,7 @@ fn neighbors(pixel: Pixel, size: usize) -> Vec<Pixel> {
         .collect()
 }
 
-fn score(img: &Vec<Vec<Color>>, center: Pixel, group: &Vec<Pixel>) -> f64 {
+fn score(img: &Vec<Vec<Color>>, center: Pixel, outerp: f64, group: &Vec<Pixel>) -> f64 {
     let (r, c) = center;
     let color = img[r][c];
     group
@@ -44,11 +44,11 @@ fn score(img: &Vec<Vec<Color>>, center: Pixel, group: &Vec<Pixel>) -> f64 {
             let group_color = img[gr][gc];
             (0..3)
                 .map(|i| (color[i] - group_color[i]).powi(2))
-                .sum::<f64>()
+                .sum::<f64>().powf(outerp)
         })
         .sum()
 }
-fn perform_exchanges<R: Rng>(img: &mut Vec<Vec<Color>>, exchanges_per_pixel: usize, rng: &mut R) {
+fn perform_exchanges<R: Rng>(img: &mut Vec<Vec<Color>>, exchanges_per_pixel: usize, outerp: f64, rng: &mut R) {
     let size = img.len();
     let num_exchanges = size.pow(2) * exchanges_per_pixel;
     for _ in 0..num_exchanges {
@@ -56,8 +56,8 @@ fn perform_exchanges<R: Rng>(img: &mut Vec<Vec<Color>>, exchanges_per_pixel: usi
         let p2 = (rng.gen_range(0..img.len()), rng.gen_range(0..img.len()));
         let neighbors1 = neighbors(p1, size);
         let neighbors2 = neighbors(p2, size);
-        let self_score = score(&img, p1, &neighbors1) + score(&img, p2, &neighbors2);
-        let swap_score = score(&img, p1, &neighbors2) + score(&img, p2, &neighbors1);
+        let self_score = score(&img, p1, outerp, &neighbors1) + score(&img, p2, outerp, &neighbors2);
+        let swap_score = score(&img, p1, outerp, &neighbors2) + score(&img, p2, outerp, &neighbors1);
         if swap_score < self_score {
             let col1 = img[p1.0][p1.1];
             let col2 = img[p2.0][p2.1];
@@ -70,6 +70,7 @@ fn make_image(
     initial_noise: f64,
     final_noise: f64,
     num_subdivide: usize,
+    outerp: f64,
     exchanges_per_pixel_max: usize,
     seed: u64,
 ) -> RgbImage {
@@ -82,7 +83,7 @@ fn make_image(
         img = subdivide_noise(&img, noise, &mut rng);
         let exchanges_per_pixel =
             exchanges_per_pixel_max * 2usize.pow((num_subdivide - 1 - i_subdivide) as u32);
-        perform_exchanges(&mut img, exchanges_per_pixel, &mut rng);
+        perform_exchanges(&mut img, exchanges_per_pixel, outerp, &mut rng);
     }
     let mut out_img = RgbImage::new(img.len() as u32, img.len() as u32);
     for (r, row) in img.iter().enumerate() {
@@ -96,21 +97,25 @@ fn make_image(
 
 fn main() -> Result<(), ImageError> {
     let initial_noise = 255;
-    let final_noise = 4;
-    let num_subdivide = 10;
+    let final_noise = 10;
+    let outerp = 0.25;
     let exchanges_per_pixel_max = 1000;
     let seed = 0;
-    let filename = format!(
-        "img-{}-{}-{}-{}-{}.png",
-        initial_noise, final_noise, num_subdivide, exchanges_per_pixel_max, seed
-    );
-    println!("{}", filename);
-    let img = make_image(
-        initial_noise as f64,
-        final_noise as f64,
-        num_subdivide,
-        exchanges_per_pixel_max,
-        seed,
-    );
-    img.save(filename)
+    for num_subdivide in 8..=10 {
+        let filename = format!(
+            "img-{}-{}-{}-{}-{}-{}.png",
+            initial_noise, final_noise, num_subdivide, outerp, exchanges_per_pixel_max, seed
+        );
+        println!("{}", filename);
+        let img = make_image(
+            initial_noise as f64,
+            final_noise as f64,
+            num_subdivide,
+            outerp,
+            exchanges_per_pixel_max,
+            seed,
+        );
+        img.save(filename)?
+    }
+    Ok(())
 }
